@@ -1,5 +1,5 @@
 var http = require('http'),
-  connect = require('connect'),
+	connect = require('connect'),
 	httpProxy = require('http-proxy'),
 	 util = require('util'),
   RedisStore = require('connect-redis')(connect),
@@ -7,23 +7,42 @@ var http = require('http'),
   redback = require('redback').createClient(),
 httpProxy = require('http-proxy'),
 ratelimit = redback.createRateLimit('requests', {bucket_interval: 5, 
-	bucket_span:24*3600}),
+	bucket_span:7*24*3600}),
 redis = require("redis"),
 client = redis.createClient(),
-i18n = require('connect-i18n'),
-client2 = redis.createClient(6379, '10.1.0.237');  
+i18n = require('connect-i18n');  
 var app = connect()   
   .use(connect.cookieParser())
   .use(connect.cookieSession({store: new RedisStore(6379,'localhost'), secret: 'proxy'
-	, cookie: {httpOnly: true, maxAge: 5 * 60 * 1000 }})) 
-  .use(i18n({default_locale: 'vi-vi'}))    
+			, cookie: {httpOnly: true, maxAge: 5 * 60 * 1000 }})) 
+  .use(i18n({default_locale: 'vi-vi'}))  
+  .use(connect.vhost('dkstatus.hpu.edu.vn', tinhtrang))  
+  .use(connect.vhost('dieukien.hpu.edu.vn', kiemtra))  
   .use(myProxy);
 
 
+ var proxy3 = new httpProxy.RoutingProxy();
+function tinhtrang(req, res){
+	var buffer = httpProxy.buffer(req);
+		proxy3.proxyRequest(req, res, {
+								host: '127.0.0.1',
+								port: 8000,								
+	});
+}
+var proxy2 = new httpProxy.RoutingProxy();
+function kiemtra(req, res){
+	var buffer = httpProxy.buffer(req);
+		proxy2.proxyRequest(req, res, {
+								host: '127.0.0.1',
+								port: 8080,
+								buffer: buffer
+	});
+}
 
 
 
 var proxy = new httpProxy.RoutingProxy();
+
 function myProxy(req, res){
 	
 	
@@ -49,11 +68,13 @@ function myProxy(req, res){
 					
 					
 					console.log('myid: ' + myid);
-					//client.scard('dk3', function(error, card){
-					client.zcard('dk2online', function(error, card){
-						client.set('card2', card);
+					
+					client.zcard('dk3online', function(error, card){
+						
+						
+						
 						if (card < 500) {
-								var args = [ 'dk2online', Date.now(), myid ];
+								var args = [ 'dk3online', Date.now(), myid ];
 								client.zadd(args, function(err, response){
 									if (err) throw err;
 									proxy.proxyRequest(req, res, {
@@ -64,32 +85,46 @@ function myProxy(req, res){
 								});
 							
 						} else {
-
-							if (card > 0) {								
+							var args2 = ['dk3online', myid];
+							client.zrank(args2, function(err, resp){
+								if (!err) {
+									if (resp) {
+											proxy.proxyRequest(req, res, {
+											host: '127.0.0.1',
+											port: 81,
+											buffer: buffer
+										});
+									} else {
+										client.get('ip', function(error, resp){
+												if (!error) {
+													if (resp){	
+														client.get('val', function(er, val){
+															if (!er) {
+																if (val < 450) {
+																	res.end('Máy chủ quá tải, vui lòng đến địa chỉ sau để tiếp tục đăng ký:  ' + resp);
+																} else {
+																	res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
+																}
+															}
+														});														
+													} 
+												}
+											});
+									}
+								} else {
+									res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
+								}	
+							});
+								
+							if (card > 0) {		
 								var min = 120 * 1000;
 								var ago = Date.now() - min;
-								var args1 = ['dk2online', '-inf', ago];
+								var args1 = ['dk3online', '-inf', ago];
 								client.zremrangebyscore(args1, function(err, countusers){
 										console.log('removed ' + countusers );
-									});
+								});		
 							}
-								var args2 = ['dk2online', myid];
-								client.zrank(args2, function(err, resp){
-									if (!err) {
-										if (resp) {
-												proxy.proxyRequest(req, res, {
-												host: '127.0.0.1',
-												port: 81,
-												buffer: buffer
-											});
-										} else {
-											res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
-										}
-									} else {
-										res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
-									}	
-							
-								});
+								
 						}
 					});
 				}
