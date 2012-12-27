@@ -1,6 +1,8 @@
 var http = require('http'),
-  connect = require('connect'),
+	fs = require('fs'),
+	connect = require('connect'),	
 	httpProxy = require('http-proxy'),
+	Cookies = require('cookies'),
 	 util = require('util'),
   RedisStore = require('connect-redis')(connect),
   uuid = require('node-uuid'),
@@ -31,12 +33,15 @@ function tinhtrang(req, res){
 }
 var proxy2 = new httpProxy.RoutingProxy();
 function kiemtra(req, res){
-	var buffer = httpProxy.buffer(req);
-		proxy2.proxyRequest(req, res, {
-								host: '127.0.0.1',
-								port: 8080,
-								buffer: buffer
-	});
+	
+	
+		var buffer = httpProxy.buffer(req);
+			proxy2.proxyRequest(req, res, {
+									host: '127.0.0.1',
+									port: 8080,
+									buffer: buffer
+		});
+	
 }
 
 
@@ -46,6 +51,7 @@ var serveronline='dk3online';
 function myProxy(req, res){
 	
 	
+	
 	var myip = req.connection.remoteAddress || req.headers.host || req.headers['x-forwarded-for'];
 	ratelimit.add(myip);
 		
@@ -53,16 +59,19 @@ function myProxy(req, res){
 		
 		
 	
-	ratelimit.count(myip, 5, function(error2, c2){
-		if (c2 > 100) {
+	ratelimit.count(myip, 2, function(error2, c2){
+		if (c2 > 10) {
 			res.end('IP: ' + myip + ' too much requests(' + c2 + ')');
 		} else {
 			console.log('myip: ' + myip);
-			req.session.uuid = req.session.uuid || uuid.v1();	
-			var myid = req.session.uuid;
+			//req.session.uuid = req.session.uuid || uuid.v1();	
+			var cooki = new Cookies( req, res );
+			var aspnetid = cooki.get('ASP.NET_SessionId');
+			var myid = aspnetid || uuid.v1() ;
+			cooki.set('ASP.NET_SessionId', myid);
 			ratelimit.add(myid);
-			ratelimit.count(myid, 10, function (err, count) {		
-			if (count > 100) {
+			ratelimit.count(myid, 4, function (err, count) {		
+			if (count > 20) {
 				res.end('Bạn vui lòng không refresh (reload) trang web liên tục. ' + '(' + count + ')');
 			} else {							
 					
@@ -74,16 +83,26 @@ function myProxy(req, res){
 						
 						
 						if (card < 500) {
-									var args = [ serveronline, Date.now(), myid ];
 									
-									client.zadd(args, function(err, response){
-										if (err) throw err;
-										proxy.proxyRequest(req, res, {
-											host: '127.0.0.1',
-											port: 81,
-											buffer: buffer
-										});
+								if (card > 450) {		
+									var min = 120 * 1000;
+									var ago = Date.now() - min;
+									var args1 = [serveronline, '-inf', ago];
+									client.zremrangebyscore(args1, function(err, countusers){
+											console.log('removed ' + countusers );										
+									});		
+								}	
+									
+								var args = [ serveronline, Date.now(), myid ];
+								
+								client.zadd(args, function(err, response){
+									if (err) throw err;
+									proxy.proxyRequest(req, res, {
+										host: '127.0.0.1',
+										port: 81,
+										buffer: buffer
 									});
+								});
 								
 						} else {
 							
@@ -93,9 +112,13 @@ function myProxy(req, res){
 											client.get('val', function(er, val){
 												if (!er) {
 													if (val < 450) {
-														res.end('Máy chủ quá tải, vui lòng đến địa chỉ sau để tiếp tục đăng ký:  ' + resp);
+															var url = './' + val;
+															var s1 = fs.readFile(url, function(errr, content){															
+															return res.end(content);
+														});
+														//res.end('Máy chủ quá tải, vui lòng đến địa chỉ sau để tiếp tục đăng ký:  ' + resp);
 													} else {
-														res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
+														return res.end('Hệ thống đang quá tải, bạn vui lòng nhấn F5 sau ít phút. ');
 													}
 												}
 											});														
@@ -103,14 +126,7 @@ function myProxy(req, res){
 									}
 								});
 									
-							if (card > 0) {		
-								var min = 120 * 1000;
-								var ago = Date.now() - min;
-								var args1 = [serveronline, '-inf', ago];
-								client.zremrangebyscore(args1, function(err, countusers){
-										console.log('removed ' + countusers );
-								});		
-							}	
+							
 						}
 					});
 				}
